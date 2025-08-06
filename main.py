@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 import os
 import json
 import cv2
@@ -16,6 +17,13 @@ import gc
 load_dotenv('.env.local')
 
 app = Flask(__name__)
+
+# Configure CORS using environment variable
+cors_origins = os.environ.get('CORS_ORIGINS')
+# Split by comma to support multiple origins
+cors_origins_list = [origin.strip() for origin in cors_origins.split(',')]
+CORS(app, origins=cors_origins_list)
+print(f"CORS configured for origins: {cors_origins_list}")
 
 # Constants
 BUCKET_NAME = 'images'
@@ -128,6 +136,30 @@ def crop_books():
         summary_image = image.copy()
         cropped_book_urls = []
         book_count = 0
+        
+        # Define vibrant, distinct colors for bounding boxes (BGR format for OpenCV)
+        vibrant_colors = [
+            (0, 255, 0),    # Bright Green
+            (255, 0, 0),    # Bright Blue
+            (0, 0, 255),    # Bright Red
+            (255, 255, 0),  # Cyan
+            (255, 0, 255),  # Magenta
+            (0, 255, 255),  # Yellow
+            (128, 0, 255),  # Purple
+            (0, 165, 255),  # Orange
+            (255, 192, 203), # Pink
+            (0, 255, 127),  # Spring Green
+            (255, 20, 147), # Deep Pink
+            (30, 144, 255), # Dodger Blue
+            (50, 205, 50),  # Lime Green
+            (255, 69, 0),   # Red Orange
+            (138, 43, 226), # Blue Violet
+            (255, 215, 0),  # Gold
+            (220, 20, 60),  # Crimson
+            (0, 191, 255),  # Deep Sky Blue
+            (124, 252, 0),  # Lawn Green
+            (255, 105, 180) # Hot Pink
+        ]
 
         for r in results:
             for box in r.boxes:
@@ -171,17 +203,17 @@ def crop_books():
                     except Exception as e:
                         print(f'Failed to upload cropped book: {e}')
                     
-                    # Draw bounding box on summary image
-                    color = (0, 255, 0)  # Green
+                    # Draw bounding box on summary image with unique color
+                    color = vibrant_colors[book_count % len(vibrant_colors)]
                     thickness = 3
                     cv2.rectangle(summary_image, (x1, y1), (x2, y2), color, thickness)
                     
-                    # Add label
+                    # Add label with matching color
                     label_text = f"book_{book_count} ({confidence:.2f})"
                     font = cv2.FONT_HERSHEY_SIMPLEX
                     font_scale = 0.8
                     font_thickness = 2
-                    text_color = (0, 255, 255)  # Yellow
+                    text_color = color  # Use same color as bounding box
                     
                     # Calculate text size for background
                     (text_width, text_height), baseline = cv2.getTextSize(
@@ -202,27 +234,57 @@ def crop_books():
 
         print(f'Found {book_count} books with confidence > 0.3')
 
-        # Create and upload summary image (optional - commented out for now)
+        # Create and upload summary image
         summary_url = ""
-        # if book_count > 0:
-        #     _, summary_buffer = cv2.imencode('.jpg', summary_image)
-        #     summary_bytes = summary_buffer.tobytes()
-        #     summary_file_name = f"book-summary-{uuid.uuid4()}.jpg"
-        #     
-        #     try:
-        #         supabase.storage.from_(BUCKET_NAME).upload(
-        #             summary_file_name, 
-        #             summary_bytes,
-        #             file_options={'content-type': 'image/jpeg', 'cache-control': '3600'}
-        #         )
-        #         
-        #         summary_signed_url = supabase.storage.from_(BUCKET_NAME).create_signed_url(
-        #             summary_file_name, 60 * 60 * 24 * 7
-        #         )
-        #         if summary_signed_url:
-        #             summary_url = summary_signed_url['signedURL']
-        #     except Exception as e:
-        #         print(f'Failed to upload summary image: {e}')
+        if book_count > 0:
+            _, summary_buffer = cv2.imencode('.jpg', summary_image)
+            summary_bytes = summary_buffer.tobytes()
+            summary_file_name = f"book-summary-{uuid.uuid4()}.jpg"
+            
+            try:
+                supabase.storage.from_(BUCKET_NAME).upload(
+                    summary_file_name, 
+                    summary_bytes,
+                    file_options={
+                        'content-type': 'image/jpeg', 
+                        'cache-control': '3600',
+                        'upsert': False
+                    }
+                )
+                
+                summary_signed_url = supabase.storage.from_(BUCKET_NAME).create_signed_url(
+                    summary_file_name, 60 * 60 * 24 * 7  # 7 days expiry
+                )
+                if summary_signed_url:
+                    summary_url = summary_signed_url['signedURL']
+                    print(f'Summary image uploaded successfully: {summary_file_name}')
+            except Exception as e:
+                print(f'Failed to upload summary image: {e}')
+        else:
+            # Even if no books found, create a summary image to show the original
+            _, summary_buffer = cv2.imencode('.jpg', summary_image)
+            summary_bytes = summary_buffer.tobytes()
+            summary_file_name = f"book-summary-no-detections-{uuid.uuid4()}.jpg"
+            
+            try:
+                supabase.storage.from_(BUCKET_NAME).upload(
+                    summary_file_name, 
+                    summary_bytes,
+                    file_options={
+                        'content-type': 'image/jpeg', 
+                        'cache-control': '3600',
+                        'upsert': False
+                    }
+                )
+                
+                summary_signed_url = supabase.storage.from_(BUCKET_NAME).create_signed_url(
+                    summary_file_name, 60 * 60 * 24 * 7  # 7 days expiry
+                )
+                if summary_signed_url:
+                    summary_url = summary_signed_url['signedURL']
+                    print(f'Summary image (no detections) uploaded successfully: {summary_file_name}')
+            except Exception as e:
+                print(f'Failed to upload summary image (no detections): {e}')
 
         # Send successful response
         response_data = {
@@ -241,6 +303,10 @@ def crop_books():
             del cropped
         if 'cropped_bytes' in locals():
             del cropped_bytes
+        if 'summary_buffer' in locals():
+            del summary_buffer
+        if 'summary_bytes' in locals():
+            del summary_bytes
         gc.collect()
         
         return jsonify(response_data)
@@ -250,8 +316,20 @@ def crop_books():
         # Clean up memory on error too
         if 'image' in locals():
             del image
+        if 'summary_image' in locals():
+            del summary_image
         if 'image_array' in locals():
             del image_array
+        if 'results' in locals():
+            del results
+        if 'cropped' in locals():
+            del cropped
+        if 'cropped_bytes' in locals():
+            del cropped_bytes
+        if 'summary_buffer' in locals():
+            del summary_buffer
+        if 'summary_bytes' in locals():
+            del summary_bytes
         gc.collect()
         return jsonify({'error': 'Failed to process book cropping. Please try again.'}), 500
 
