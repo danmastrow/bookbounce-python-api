@@ -67,7 +67,7 @@ def create_supabase_client():
 
 @app.route('/')
 def index():
-    return jsonify({"Choo Choo": "Welcome to your Flask app 🚅"})
+    return jsonify({"Hello": "World"})
 
 @app.route('/admin/books/crop', methods=['POST'])
 def crop_books():
