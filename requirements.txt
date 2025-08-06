@@ -6,7 +6,7 @@ Jinja2==2.11.3
 MarkupSafe==1.1.1
 Werkzeug==1.0.1
 ultralytics==8.3.174
-opencv-python>=4.8.0
+opencv-python-headless>=4.8.0
 pillow>=10.0.0
 supabase>=2.0.0
 numpy>=1.23.0,<2.3.0
