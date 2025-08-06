@@ -19,7 +19,7 @@ load_dotenv('.env.local')
 app = Flask(__name__)
 
 # Configure CORS using environment variable
-cors_origins = os.environ.get('CORS_ORIGINS')
+cors_origins = os.environ.get('CORS_ORIGINS', '*')
 # Split by comma to support multiple origins
 cors_origins_list = [origin.strip() for origin in cors_origins.split(',')]
 CORS(app, origins=cors_origins_list)

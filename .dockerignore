@@ -1,0 +1,12 @@
+venv/
+yolov8m.pt
+.git/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env*
+README.md
+example.py
+example.sh
